@@ -45,6 +45,8 @@ const REMOTE_FRESH: Duration = Duration::from_secs(60);
 /// How often the open Friend activity panel asks for news.
 const FRIENDS_POLL: Duration = Duration::from_secs(15);
 const DEVICES_FRESH: Duration = Duration::from_secs(12);
+/// Personal patch: how soon to look again for a Soloist that just started.
+const SOLOIST_DEVICES_RETRY: Duration = Duration::from_millis(1500);
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(280);
 /// How long a suspend or the end of the session waits for pending file
 /// writes. fastframe-power holds the system back for 1.5 s before a
@@ -4666,13 +4668,27 @@ impl App {
                 }
                 self.poll_remote(true);
             }
-            if (self.show_devices
-                || (matches!(self.soloist_status, crate::soloist::Status::Ready { .. })
-                    && self.soloist_device_id.is_none()))
+            // Personal patch: Spotify lists a Soloist that just started a
+            // moment after it reports ready, so the first look usually misses
+            // it and the song waited out DEVICES_FRESH. Look again soon, but
+            // only for the pairing grace, so a player that never appears
+            // cannot hammer the Web API.
+            let awaiting_soloist =
+                matches!(self.soloist_status, crate::soloist::Status::Ready { .. })
+                    && self.soloist_device_id.is_none();
+            let devices_fresh = if awaiting_soloist
+                && self.soloist_status_at.elapsed() < SOLOIST_PAIRING_GRACE
+            {
+                ctx.request_repaint_after(SOLOIST_DEVICES_RETRY);
+                SOLOIST_DEVICES_RETRY
+            } else {
+                DEVICES_FRESH
+            };
+            if (self.show_devices || awaiting_soloist)
                 && !self.devices_loading
                 && self
                     .devices_fetched_at
-                    .is_none_or(|at| at.elapsed() > DEVICES_FRESH)
+                    .is_none_or(|at| at.elapsed() > devices_fresh)
             {
                 self.refresh_devices();
             }
