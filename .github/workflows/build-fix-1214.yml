@@ -1,0 +1,41 @@
+# Personal one-off: build the Windows binary of PR #1329 (Soloist follows the
+# default output). Mirrors the Windows x64 row of release.yml, minus signing.
+name: Build fix 1214 (Windows x64)
+
+on:
+  push:
+    branches: [build-fix-1214]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      CMAKE_GENERATOR: Ninja
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - run: rustup target add x86_64-pc-windows-msvc
+      - name: GLEW for libprojectM
+        run: vcpkg install glew:x64-windows-static
+      - name: MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - run: cargo build --release --locked --target x86_64-pc-windows-msvc
+      - name: Check the binary
+        shell: pwsh
+        run: |
+          $binary = "target\x86_64-pc-windows-msvc\release\spotifast.exe"
+          & $binary --version
+          (Get-FileHash $binary -Algorithm SHA256).Hash
+      - uses: actions/upload-artifact@v7
+        with:
+          name: spotifast-fix-1214-windows-x64
+          path: target/x86_64-pc-windows-msvc/release/spotifast.exe
+          if-no-files-found: error
